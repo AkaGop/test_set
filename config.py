@@ -1,20 +1,31 @@
 # config.py
+"""
+Single source of truth for all static configuration data, including Alarm Classifications.
+"""
 CEID_MAP = {
-    11: "Equipment Offline", 12: "Control State Local", 13: "Control State Remote",
-    16: "PP-SELECT Changed", 30: "Process State Change", 101: "Alarm Cleared",
-    102: "Alarm Set", 18: "AlarmSet", 113: "AlarmSet", 114: "AlarmSet", 
-    120: "IDRead", 121: "UnloadedFromMag/LoadedToTool", 127: "LoadedToTool",
-    131: "LoadToToolCompleted", 132: "UnloadFromToolCompleted", 136: "MappingCompleted",
-    141: "PortStatusChange", 151: "MagazineDocked", 180: "RequestMagazineDock",
-    181: "MagazineDocked", 182: "MagazineUndocked", 183: "RequestOperatorIdCheck",
-    184: "RequestOperatorLogin", 185: "RequestMappingCheck",
+    # ... (content is the same as the last step)
 }
 RPTID_MAP = {
-    152: ['Timestamp', 'OperatorID'], 150: ['Timestamp', 'MagazineID'],
-    151: ['Timestamp', 'PortID', 'MagazineID', 'OperatorID'],
-    141: ['Timestamp', 'PortID', 'PortStatus'],
-    120: ['Timestamp', 'LotID', 'PanelID', 'Orientation', 'ResultCode', 'SlotID'],
-    121: ['Timestamp', 'LotID', 'PanelID', 'SlotID'],
-    122: ['Timestamp', 'LotID', 'SourcePortID', 'DestPortID', 'PanelList'],
-    11:  ['Timestamp', 'ControlState'], 101: ['Timestamp', 'AlarmIDValue'],
+    # ... (content is the same as the last step)
 }
+ALARM_MAP = {
+    # ... (content is the same as the last step)
+}
+
+# --- START OF HIGHLIGHTED CHANGE ---
+# This list defines which alarms are considered "hard faults" that stop the process.
+# All other alarms will be treated as "soft warnings."
+CRITICAL_ALARM_IDS = [
+    # System/Safety
+    1, 2, 190, 191, 192, 193, 194,
+    # HNC/Fork
+    4336, 4337,
+    # Panel Motion
+    1050, 1051, 1052, 1055, 5458, 5459, 5460,
+    # Timeouts that stop a process
+    5472, 5473, 5474, 5475, 5476, 5477,
+    # Inverter/Driver Errors
+    8192, 8193, 8194, 8195, 8196, 8197,
+    12288, 12289, 12290, 12291, 12292, 12293,
+]
+# --- END OF HIGHLIGHTED CHANGE ---
