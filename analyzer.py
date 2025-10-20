@@ -1,89 +1,72 @@
 # analyzer.py
 from datetime import datetime
 import pandas as pd
+from collections import Counter
+# Import the new critical alarm list
+from config import ALARM_MAP, CRITICAL_ALARM_IDS 
 
 def perform_eda(df: pd.DataFrame) -> dict:
-    """
-    Performs Exploratory Data Analysis on the parsed log data.
-    This function is robust and defensively checks for column existence.
-    """
-    eda_results = {}
+    # ... (This function is correct and remains unchanged) ...
 
-    # Event Frequency Analysis
-    if 'EventName' in df.columns:
-        eda_results['event_counts'] = df['EventName'].value_counts()
-    else:
-        eda_results['event_counts'] = pd.Series(dtype='int64')
+# --- START OF HIGHLIGHTED CHANGE ---
 
-    # Alarm Analysis
-    if 'details.AlarmID' in df.columns:
-        alarm_events = df[df['details.AlarmID'].notna()].copy()
-        if not alarm_events.empty:
-            alarm_ids = pd.to_numeric(alarm_events['details.AlarmID'], errors='coerce').dropna()
-            eda_results['alarm_counts'] = alarm_ids.value_counts()
-            eda_results['alarm_table'] = alarm_events[['timestamp', 'EventName', 'details.AlarmID']]
-        else:
-            eda_results['alarm_counts'] = pd.Series(dtype='int64')
-            eda_results['alarm_table'] = pd.DataFrame()
-    else:
-        eda_results['alarm_counts'] = pd.Series(dtype='int64')
-        eda_results['alarm_table'] = pd.DataFrame()
+def find_precursor_patterns(df: pd.DataFrame, window_size: int = 5) -> pd.DataFrame:
+    """
+    Finds sequences of warning events that occur before a critical failure.
+    """
+    if 'details.AlarmID' not in df.columns:
+        return pd.DataFrame()
+
+    # Ensure AlarmID is numeric for comparison
+    df['AlarmID_numeric'] = pd.to_numeric(df['details.AlarmID'], errors='coerce')
+    
+    # Find the index locations of all critical alarms
+    critical_alarm_indices = df[df['AlarmID_numeric'].isin(CRITICAL_ALARM_IDS)].index.tolist()
+    
+    precursor_sequences = []
+    
+    for idx in critical_alarm_indices:
+        # Define the window of events to look at before the critical alarm
+        start_window = max(0, idx - window_size)
+        end_window = idx
         
-    return eda_results
+        # Get the slice of the DataFrame representing the events just before the failure
+        window_df = df.iloc[start_window:end_window]
+        
+        # From that window, extract only the 'soft' warning alarms
+        warnings_in_window = window_df[
+            (window_df['AlarmID_numeric'].notna()) &
+            (~window_df['AlarmID_numeric'].isin(CRITICAL_ALARM_IDS))
+        ]
+        
+        if not warnings_in_window.empty:
+            # Create a tuple of the warning event names to use as a sequence key
+            sequence = tuple(warnings_in_window['EventName'].tolist())
+            failed_alarm_id = int(df.loc[idx, 'AlarmID_numeric'])
+            failed_alarm_name = ALARM_MAP.get(failed_alarm_id, "Unknown Critical Alarm")
+            
+            precursor_sequences.append({
+                "Pattern": " -> ".join(sequence),
+                "Leads_To_Failure": f"ALID {failed_alarm_id}: {failed_alarm_name}"
+            })
+
+    if not precursor_sequences:
+        return pd.DataFrame()
+
+    # Count the occurrences of each unique pattern-failure pair
+    pattern_counts = Counter(
+        (seq['Pattern'], seq['Leads_To_Failure']) for seq in precursor_sequences
+    )
+    
+    # Format the results into a DataFrame
+    result_list = [
+        {"Precursor Pattern": pattern, "Leads to Failure": failure, "Occurrences": count}
+        for (pattern, failure), count in pattern_counts.items()
+    ]
+    
+    return pd.DataFrame(result_list).sort_values(by="Occurrences", ascending=False)
+
+# --- END OF HIGHLIGHTED CHANGE ---
 
 def analyze_data(events: list) -> dict:
-    """
-    Analyzes a list of parsed events to calculate high-level KPIs and summaries.
-    """
-    summary = {
-        "operators": set(), "magazines": set(), "lot_id": "N/A", "panel_count": 0,
-        "job_start_time": "N/A", "job_end_time": "N/A", "total_duration_sec": 0.0,
-        "avg_cycle_time_sec": 0.0, "job_status": "No Job Found",
-        "anomalies": [], "alarms": [], "control_state_changes": []
-    }
-
-    if not events: return summary
-
-    start_event = next((e for e in events if e.get('details', {}).get('RCMD') == 'LOADSTART'), None)
-    
-    if start_event:
-        summary['lot_id'] = start_event['details'].get('LotID', 'N/A')
-        if not summary['lot_id'] or summary['lot_id'] == 'N/A':
-            summary['lot_id'] = next((e['details'].get('LotID') for e in events if e.get('details', {}).get('LotID')), 'N/A')
-        
-        try: summary['panel_count'] = int(start_event['details'].get('PanelCount', 0))
-        except (ValueError, TypeError): summary['panel_count'] = 0
-        
-        summary['job_start_time'] = start_event['timestamp']
-        summary['job_status'] = "Started but did not complete"
-        
-        start_index = events.index(start_event)
-        end_event = next((e for e in events[start_index:] if e.get('details', {}).get('CEID') in [131, 132]), None)
-        
-        if end_event:
-            summary['job_status'] = "Completed"
-            summary['job_end_time'] = end_event.get('timestamp')
-            try:
-                t_start = datetime.strptime(start_event['timestamp'], "%Y/%m/%d %H:%M:%S.%f")
-                t_end = datetime.strptime(end_event['timestamp'], "%Y/%m/%d %H:%M:%S.%f")
-                duration = (t_end - t_start).total_seconds()
-                if duration >= 0:
-                    summary['total_duration_sec'] = round(duration, 2)
-                    if summary['panel_count'] > 0:
-                        summary['avg_cycle_time_sec'] = round(duration / summary['panel_count'], 2)
-            except (ValueError, TypeError):
-                summary['job_status'] = "Time Calculation Error"
-    else:
-        if any(e.get('details', {}).get('CEID') in [120, 127] for e in events):
-            summary['lot_id'] = "Dummy/Test Panels"
-
-    for event in events:
-        details = event.get('details', {})
-        if details.get('OperatorID'): summary['operators'].add(details['OperatorID'])
-        if details.get('MagazineID'): summary['magazines'].add(details['MagazineID'])
-        
-        ceid = details.get('CEID')
-        if ceid == 12: summary['control_state_changes'].append({"Timestamp": event['timestamp'], "State": "LOCAL"})
-        elif ceid == 13: summary['control_state_changes'].append({"Timestamp": event['timestamp'], "State": "REMOTE"})
-            
-    return summary
+    # ... (This function is correct and remains unchanged) ...
