@@ -1,0 +1,61 @@
+# log_parser.py
+import re
+from io import StringIO
+from config import CEID_MAP, RPTID_MAP
+from parser_utils import tokenize, build_tree
+
+def _parse_s6f11(text):
+    data = {}
+    tree = build_tree(tokenize(text))
+    try:
+        body, ceid_str, reports = tree[0], tree[0][1], tree[0][2]
+        rptid_str, payload = reports[0][0], reports[0][1]
+        ceid, rptid = int(ceid_str), int(rptid_str)
+        if ceid in CEID_MAP:
+            data['CEID'] = ceid
+            if "Alarm" in CEID_MAP[ceid]: data['AlarmID'] = ceid
+        if rptid in RPTID_MAP:
+            data['RPTID'] = rptid
+            names = RPTID_MAP.get(rptid, [])
+            for i, name in enumerate(names):
+                if i < len(payload): data[name] = payload[i]
+    except (IndexError, ValueError): pass
+    return data
+
+def _parse_s2f49(text):
+    data = {}
+    rcmd = re.search(r"<\s*A\s*\[\d+\]\s*'([A-Z_]{5,})'", text)
+    if rcmd: data['RCMD'] = rcmd.group(1)
+    lotid = re.search(r"'LOTID'\s*>\s*<A\[\d+\]\s*'([^']*)'", text, re.IGNORECASE)
+    if lotid: data['LotID'] = lotid.group(1)
+    panels = re.search(r"'LOTPANELS'\s*>\s*<L\s\[(\d+)\]", text, re.IGNORECASE)
+    if panels: data['PanelCount'] = int(panels.group(1))
+    return data
+
+def parse_log_file(file):
+    events = []
+    if not file: return events
+    try: lines = StringIO(file.getvalue().decode("utf-8")).readlines()
+    except: lines = StringIO(file.getvalue().decode("latin-1", errors='ignore')).readlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        header = re.match(r"(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\.\d+),\[([^\]]+)\],(.*)", line)
+        if not header: i += 1; continue
+        ts, ltype, msg_part = header.groups()
+        msg_match = re.search(r"MessageName=(\w+)|Message=.*?:\'(\w+)\'", msg_part)
+        msg_name = (msg_match.group(1) or msg_match.group(2)) if msg_match else "N/A"
+        event = {"timestamp": ts, "msg_name": msg_name}
+        if ("Core:Send" in ltype or "Core:Receive" in ltype) and i+1<len(lines) and lines[i+1].strip().startswith('<'):
+            j = i + 1; block = []
+            while j < len(lines) and lines[j].strip() != '.': block.append(lines[j]); j += 1
+            i = j
+            if block:
+                text = "".join(block)
+                details = {}
+                if msg_name == 'S6F11': details = _parse_s6f11(text)
+                elif msg_name == 'S2F49': details = _parse_s2f49(text)
+                if details: event['details'] = details
+        if 'details' in event: events.append(event)
+        i += 1
+    return events
