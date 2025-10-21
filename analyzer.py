@@ -40,21 +40,22 @@ def perform_eda(df):
 def analyze_data(events):
     summary = {"operators": set(), "magazines": set(), "lot_id": "N/A", "panel_count": 0, "total_duration_sec": 0.0, "avg_cycle_time_sec": 0.0, "job_status": "No Job Found", "control_state_changes": []}
     if not events: return summary
-    start = next((e for e in events if e.get('details', {}).get('RCMD') == 'LOADSTART'), None)
-    if start:
-        summary['lot_id'] = start['details'].get('LotID', 'N/A')
+    start_event = next((e for e in events if e.get('details', {}).get('RCMD') == 'LOADSTART'), None)
+    if start_event:
+        summary['lot_id'] = start_event['details'].get('LotID', 'N/A')
         if not summary['lot_id'] or summary['lot_id'] == 'N/A':
             summary['lot_id'] = next((e['details'].get('LotID') for e in events if e.get('details', {}).get('LotID')), 'N/A')
-        try: summary['panel_count'] = int(start['details'].get('PanelCount', 0))
+        try: summary['panel_count'] = int(start_event['details'].get('PanelCount', 0))
         except: summary['panel_count'] = 0
         summary['job_status'] = "Started but did not complete"
-        start_idx = events.index(start)
-        end = next((e for e in events[start_idx:] if e.get('details', {}).get('CEID') in [131, 132]), None)
-        if end:
+        start_index = events.index(start_event)
+        end_event = next((e for e in events[start_index:] if e.get('details', {}).get('CEID') in [131, 132]), None)
+        if end_event:
             summary['job_status'] = "Completed"
             try:
-                t_s, t_e = datetime.strptime(start['timestamp'],"%Y/%m/%d %H:%M:%S.%f"), datetime.strptime(end['timestamp'],"%Y/%m/%d %H:%M:%S.%f")
-                dur = (t_e - t_s).total_seconds()
+                t_start = datetime.strptime(start_event['timestamp'],"%Y/%m/%d %H:%M:%S.%f")
+                t_end = datetime.strptime(end_event['timestamp'],"%Y/%m/%d %H:%M:%S.%f")
+                dur = (t_end - t_s).total_seconds()
                 if dur >= 0:
                     summary['total_duration_sec'] = round(dur, 2)
                     if summary['panel_count'] > 0: summary['avg_cycle_time_sec'] = round(dur / summary['panel_count'], 2)
