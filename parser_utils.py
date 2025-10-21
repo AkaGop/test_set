@@ -1,17 +1,13 @@
 # parser_utils.py
 import re
-
 def tokenize(text):
-    """Breaks the SECS message text into a stream of tokens."""
-    spec = [('L_S', r'<\s*L\s*\[\d+\]\s*>'), ('L_E', r'>'), ('A', r"<\s*A\s*\[\d+\]\s*'([^']*)'\s*>"), ('U', r"<\s*U\d\s*\[\d+\]\s*(\d+)\s*>"), ('S', r'[\s\n]+')]
+    spec = [('L_S',r'<\s*L\s*\[\d+\]\s*>'),('L_E',r'>'),('A',r"<\s*A\s*\[\d+\]\s*'([^']*)'\s*>"),('U',r"<\s*U\d\s*\[\d+\]\s*(\d+)\s*>"),('S',r'[\s\n]+')]
     tok_regex = '|'.join('(?P<%s>%s)' % p for p in spec)
     for mo in re.finditer(tok_regex, text):
         k, v = mo.lastgroup, mo.group()
         if k == 'S': continue
         yield k, v
-
 def build_tree(tokens):
-    """Builds a nested Python list from a stream of tokens."""
     stack = [[]]
     for k, v in tokens:
         if k == 'L_S':
