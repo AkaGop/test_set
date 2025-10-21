@@ -55,7 +55,7 @@ def analyze_data(events):
             try:
                 t_start = datetime.strptime(start_event['timestamp'],"%Y/%m/%d %H:%M:%S.%f")
                 t_end = datetime.strptime(end_event['timestamp'],"%Y/%m/%d %H:%M:%S.%f")
-                dur = (t_end - t_s).total_seconds()
+                dur = (t_end - t_start).total_seconds()
                 if dur >= 0:
                     summary['total_duration_sec'] = round(dur, 2)
                     if summary['panel_count'] > 0: summary['avg_cycle_time_sec'] = round(dur / summary['panel_count'], 2)
